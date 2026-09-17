@@ -1,377 +1,78 @@
-- name: Patch known SwiftUI toolbar ambiguity issues
+name: iOS Simulator Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Create project.yml
         run: |
-          python3 - << 'PYEOF'
-          import os
-          
-          def write(path, content):
-              os.makedirs(os.path.dirname(path), exist_ok=True)
-              with open(path, "w", encoding="utf-8") as f:
-                  f.write(content)
-              print(f"created {path}")
-          
-          def replace(path, old, new, required=True):
-              if not os.path.isfile(path):
-                  print(f"skip (missing): {path}")
-                  return
-              with open(path, encoding="utf-8") as f:
-                  content = f.read()
-              if old not in content:
-                  if new in content:
-                      print(f"already patched: {path}")
-                  else:
-                      msg = f"PATTERN NOT FOUND in {path}"
-                      if required:
-                          raise SystemExit(msg)
-                      print(msg)
-                  return
-              content = content.replace(old, new)
-              with open(path, "w", encoding="utf-8") as f:
-                  f.write(content)
-              print(f"patched: {path}")
-          
-          # 1) shared helper file
-          write("Alhoq/Extensions/ToolbarHelpers.swift", '''import SwiftUI
-          
-          @ToolbarContentBuilder
-          func cancelToolbarItem(_ title: String, action: @escaping () -> Void) -> some ToolbarContent {
-              ToolbarItem(placement: .cancellationAction) {
-                  Button(title, action: action)
-              }
-          }
-          
-          @ToolbarContentBuilder
-          func toolbarItem<Content: View>(
-              placement: ToolbarItemPlacement,
-              @ViewBuilder content: @escaping () -> Content
-          ) -> some ToolbarContent {
-              ToolbarItem(placement: placement, content: content)
-          }
-          
-          @ToolbarContentBuilder
-          func toolbarItemGroup<Content: View>(
-              placement: ToolbarItemPlacement,
-              @ViewBuilder content: @escaping () -> Content
-          ) -> some ToolbarContent {
-              ToolbarItemGroup(placement: placement, content: content)
-          }
-          ''')
-          
-          # 2) simple single-line cancel-button replacements (global per file)
-          single_line_files = [
-              "Alhoq/Views/Rooms/RoomThreadView.swift",
-              "Alhoq/Views/Rooms/RoomListViews.swift",
-              "Alhoq/Views/Rooms/RoomParticipantsSheet.swift",
-              "Alhoq/Views/Reviews/ReviewSubmitView.swift",
-              "Alhoq/Views/Booking/BookingCreateView.swift",
-              "Alhoq/Views/EscrowMarket/EscrowMarketViews.swift",
-              "Alhoq/Views/Orders/OrderDetailView.swift",
-              "Alhoq/Views/Orders/OrderCreateView.swift",
-              "Alhoq/Views/Chat/InboxView.swift",
-              "Alhoq/Views/Anonymous/AnonymousViews.swift",
-              "Alhoq/Views/CustomForm/FormFillView.swift",
-              "Alhoq/Views/Handshake/HandshakeViews.swift",
-              "Alhoq/Views/Feed/FeedViews.swift",
-          ]
-          for f in single_line_files:
-              if os.path.isfile(f):
-                  with open(f, encoding="utf-8") as fh:
-                      c = fh.read()
-                  c2 = c.replace(
-                      'ToolbarItem(placement: .cancellationAction) { Button("বাতিল") { dismiss() } }',
-                      'cancelToolbarItem("বাতিল") { dismiss() }')
-                  c2 = c2.replace(
-                      'ToolbarItem(placement: .cancellationAction) { Button("বন্ধ করুন") { dismiss() } }',
-                      'cancelToolbarItem("বন্ধ করুন") { dismiss() }')
-                  if c2 != c:
-                      with open(f, "w", encoding="utf-8") as fh:
-                          fh.write(c2)
-                      print(f"patched (single-line pass): {f}")
-              else:
-                  print(f"skip (missing): {f}")
-          
-          # 3) exact multi-line / bespoke replacements
-          replace("Alhoq/Views/Profile/ProfileView.swift",
-              '''            .toolbar {
-                          ToolbarItem(placement: .cancellationAction) {
-                              Button("বাতিল") { dismiss() }
-                          }
-                      }''',
-              '''            .toolbar {
-                          cancelToolbarItem("বাতিল") { dismiss() }
-                      }''')
-          
-          replace("Alhoq/Views/Auth/RegisterView.swift",
-              '''            .toolbar {
-                          ToolbarItem(placement: .cancellationAction) {
-                              Button("বাতিল") { dismiss() }
-                          }
-                      }''',
-              '''            .toolbar {
-                          cancelToolbarItem("বাতিল") { dismiss() }
-                      }''')
-          
-          replace("Alhoq/Views/Listings/CreateEditListingView.swift",
-              '''            .toolbar {
-                          ToolbarItem(placement: .cancellationAction) {
-                              Button("বাতিল") { dismiss() }
-                          }
-                      }''',
-              '''            .toolbar {
-                          cancelToolbarItem("বাতিল") { dismiss() }
-                      }''')
-          
-          replace("Alhoq/Views/Checkout/PackagesView.swift",
-              '''                    .toolbar {
-                                  ToolbarItem(placement: .cancellationAction) {
-                                      Button("বাতিল") { Task { await viewModel.handleOutcome(.cancelled) } }
-                                  }
-                              }''',
-              '''                    .toolbar {
-                                  cancelToolbarItem("বাতিল") { Task { await viewModel.handleOutcome(.cancelled) } }
-                              }''')
-          
-          replace("Alhoq/Services/DeepLinkRouter.swift",
-              '''                    .toolbar {
-                                  ToolbarItem(placement: .cancellationAction) {
-                                      Button("বন্ধ করুন") { self.destination = nil }
-                                  }
-                              }''',
-              '''                    .toolbar {
-                                  cancelToolbarItem("বন্ধ করুন") { self.destination = nil }
-                              }''')
-          
-          replace("Alhoq/Views/AiAssistant/AiAssistantView.swift",
-              '''        .toolbar {
-                      ToolbarItem(placement: .topBarTrailing) {
-                          Picker("ভাষা", selection: $viewModel.lang) {
-                              Text("বাং").tag("bn")
-                              Text("EN").tag("en")
-                          }
-                          .pickerStyle(.segmented)
-                          .frame(width: 100)
-                      }
-                  }
-              }''',
-              '''        .toolbar {
-                      languageToolbarItem
-                  }
-              }
-          
-              @ToolbarContentBuilder
-              private var languageToolbarItem: some ToolbarContent {
-                  ToolbarItem(placement: .topBarTrailing) {
-                      Picker("ভাষা", selection: $viewModel.lang) {
-                          Text("বাং").tag("bn")
-                          Text("EN").tag("en")
-                      }
-                      .pickerStyle(.segmented)
-                      .frame(width: 100)
-                  }
-              }''')
-          
-          replace("Alhoq/Views/Live/LiveStreamViews.swift",
-              '''        .toolbar {
-                      ToolbarItem(placement: .topBarTrailing) {
-                          Button { showBroadcast = true } label: { Image(systemName: "video.badge.plus") }
-                      }
-                  }''',
-              '''        .toolbar {
-                      toolbarItem(placement: .topBarTrailing) {
-                          Button { showBroadcast = true } label: { Image(systemName: "video.badge.plus") }
-                      }
-                  }''')
-          
-          replace("Alhoq/Views/Rooms/RoomThreadView.swift",
-              '''        .toolbar {
-                      ToolbarItemGroup(placement: .topBarTrailing) {
-                          Button { showPinnedSheet = true } label: { Image(systemName: "pin") }
-                          Button { showSearch = true } label: { Image(systemName: "magnifyingglass") }
-                          Menu {
-                              Button("পোল তৈরি করুন", systemImage: "chart.bar") { showPollCreate = true }
-                              if viewModel.me?.isAdmin == true {
-                                  Button("ঘোষণা পাঠান", systemImage: "megaphone") { showAnnouncementCreate = true }
-                              }
-                              Button("সদস্যরা", systemImage: "person.2") { showParticipants = true }
-                          } label: { Image(systemName: "ellipsis.circle") }
-                      }
-                  }''',
-              '''        .toolbar {
-                      toolbarItemGroup(placement: .topBarTrailing) {
-                          Button { showPinnedSheet = true } label: { Image(systemName: "pin") }
-                          Button { showSearch = true } label: { Image(systemName: "magnifyingglass") }
-                          Menu {
-                              Button("পোল তৈরি করুন", systemImage: "chart.bar") { showPollCreate = true }
-                              if viewModel.me?.isAdmin == true {
-                                  Button("ঘোষণা পাঠান", systemImage: "megaphone") { showAnnouncementCreate = true }
-                              }
-                              Button("সদস্যরা", systemImage: "person.2") { showParticipants = true }
-                          } label: { Image(systemName: "ellipsis.circle") }
-                      }
-                  }''')
-          
-          replace("Alhoq/Views/Rooms/RoomListViews.swift",
-              '''        .toolbar {
-                      ToolbarItemGroup(placement: .topBarTrailing) {
-                          Button { showSearch = true } label: { Image(systemName: "magnifyingglass") }
-                          Button { showCreate = true } label: { Image(systemName: "plus") }
-                          Button { showJoinByToken = true } label: { Image(systemName: "link") }
-                      }
-                  }''',
-              '''        .toolbar {
-                      toolbarItemGroup(placement: .topBarTrailing) {
-                          Button { showSearch = true } label: { Image(systemName: "magnifyingglass") }
-                          Button { showCreate = true } label: { Image(systemName: "plus") }
-                          Button { showJoinByToken = true } label: { Image(systemName: "link") }
-                      }
-                  }''')
-          
-          replace("Alhoq/Views/Notifications/NotificationsView.swift",
-              '''        .toolbar {
-                      ToolbarItem(placement: .topBarTrailing) {
-                          Menu {
-                              Button("সব পঠিত করুন") { Task { await viewModel.markAllRead() } }
-                              Button("সব মুছুন", role: .destructive) { Task { await viewModel.deleteAll() } }
-                          } label: {
-                              Image(systemName: "ellipsis.circle")
-                          }
-                      }
-                  }''',
-              '''        .toolbar {
-                      toolbarItem(placement: .topBarTrailing) {
-                          Menu {
-                              Button("সব পঠিত করুন") { Task { await viewModel.markAllRead() } }
-                              Button("সব মুছুন", role: .destructive) { Task { await viewModel.deleteAll() } }
-                          } label: {
-                              Image(systemName: "ellipsis.circle")
-                          }
-                      }
-                  }''')
-          
-          replace("Alhoq/Views/Chat/InboxView.swift",
-              '''            .toolbar {
-                          ToolbarItem(placement: .topBarTrailing) {
-                              Button { showNewChatSearch = true } label: { Image(systemName: "square.and.pencil") }
-                          }
-                      }''',
-              '''            .toolbar {
-                          toolbarItem(placement: .topBarTrailing) {
-                              Button { showNewChatSearch = true } label: { Image(systemName: "square.and.pencil") }
-                          }
-                      }''')
-          
-          replace("Alhoq/Views/Chat/ChatThreadView.swift",
-              '''        .toolbar {
-                      if viewModel.otherCallsEnabled {
-                          ToolbarItemGroup(placement: .topBarTrailing) {
-                              Button { Task { await CallManager.shared.startCall(userId: viewModel.otherId, type: .voice) } } label: {
-                                  Image(systemName: "phone")
-                              }
-                              Button { Task { await CallManager.shared.startCall(userId: viewModel.otherId, type: .video) } } label: {
-                                  Image(systemName: "video")
-                              }
-                          }
-                      }
-                  }''',
-              '''        .toolbar {
-                      if viewModel.otherCallsEnabled {
-                          toolbarItemGroup(placement: .topBarTrailing) {
-                              Button { Task { await CallManager.shared.startCall(userId: viewModel.otherId, type: .voice) } } label: {
-                                  Image(systemName: "phone")
-                              }
-                              Button { Task { await CallManager.shared.startCall(userId: viewModel.otherId, type: .video) } } label: {
-                                  Image(systemName: "video")
-                              }
-                          }
-                      }
-                  }''')
-          
-          replace("Alhoq/Views/Listings/MyListingsView.swift",
-              '''            .toolbar {
-                          ToolbarItem(placement: .topBarTrailing) {
-                              Button {
-                                  showCreateSheet = true
-                              } label: {
-                                  Image(systemName: "plus")
-                              }
-                          }
-                      }''',
-              '''            .toolbar {
-                          toolbarItem(placement: .topBarTrailing) {
-                              Button {
-                                  showCreateSheet = true
-                              } label: {
-                                  Image(systemName: "plus")
-                              }
-                          }
-                      }''')
-          
-          replace("Alhoq/Views/Listings/ListingDetailView.swift",
-              '''        .toolbar {
-                      ToolbarItem(placement: .topBarTrailing) {
-                          Menu {
-                              Button("শেয়ার করুন", systemImage: "square.and.arrow.up") { /* Phase 19: Engagement */ }
-                              Button("রিপোর্ট করুন", systemImage: "flag", role: .destructive) { showReportSheet = true }
-                          } label: {
-                              Image(systemName: "ellipsis.circle")
-                          }
-                      }
-                  }''',
-              '''        .toolbar {
-                      toolbarItem(placement: .topBarTrailing) {
-                          Menu {
-                              Button("শেয়ার করুন", systemImage: "square.and.arrow.up") { /* Phase 19: Engagement */ }
-                              Button("রিপোর্ট করুন", systemImage: "flag", role: .destructive) { showReportSheet = true }
-                          } label: {
-                              Image(systemName: "ellipsis.circle")
-                          }
-                      }
-                  }''')
-          
-          replace("Alhoq/Views/Listings/ListingFeedView.swift",
-              '''                .toolbar {
-                              ToolbarItemGroup(placement: .topBarTrailing) {
-                                  Button { showGlobalSearch = true } label: { Image(systemName: "magnifyingglass") }
-                                  Button {
-                                      showFilterSheet = true
-                                  } label: {
-                                      Image(systemName: "line.3.horizontal.decrease.circle")
-                                  }
-                              }
-                          }''',
-              '''                .toolbar {
-                              toolbarItemGroup(placement: .topBarTrailing) {
-                                  Button { showGlobalSearch = true } label: { Image(systemName: "magnifyingglass") }
-                                  Button {
-                                      showFilterSheet = true
-                                  } label: {
-                                      Image(systemName: "line.3.horizontal.decrease.circle")
-                                  }
-                              }
-                          }''')
-          
-          replace("Alhoq/Views/Anonymous/AnonymousViews.swift",
-              '''        .toolbar {
-                      ToolbarItem(placement: .topBarTrailing) {
-                          Button { showComposer = true } label: { Image(systemName: "square.and.pencil") }
-                      }
-                  }''',
-              '''        .toolbar {
-                      toolbarItem(placement: .topBarTrailing) {
-                          Button { showComposer = true } label: { Image(systemName: "square.and.pencil") }
-                      }
-                  }''')
-          
-          replace("Alhoq/Views/Feed/FeedViews.swift",
-              '''            .toolbar {
-                          ToolbarItem(placement: .topBarTrailing) {
-                              Button { showComposer = true } label: { Image(systemName: "square.and.pencil") }
-                          }
-                      }''',
-              '''            .toolbar {
-                          toolbarItem(placement: .topBarTrailing) {
-                              Button { showComposer = true } label: { Image(systemName: "square.and.pencil") }
-                          }
-                      }''')
-          
-          print("ALL TOOLBAR PATCHES APPLIED")
-          PYEOF
+          cat << 'EOF' > project.yml
+          name: Alhoq
+          options:
+            bundleIdPrefix: com.alhoq
+            deploymentTarget:
+              iOS: "16.0"
+          targets:
+            Alhoq:
+              type: application
+              platform: iOS
+              deploymentTarget: "16.0"
+              sources:
+                - path: .
+                  excludes:
+                    - ".github"
+                    - "build"
+                    - "project.yml"
+                    - "*.xcodeproj"
+          EOF
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Patch pbxproj object version for Xcode 15 compatibility
+        run: |
+          PBXPROJ="Alhoq.xcodeproj/project.pbxproj"
+          if [ -f "$PBXPROJ" ]; then
+            echo "Before:"; grep objectVersion "$PBXPROJ"
+            sed -i '' 's/objectVersion = 77;/objectVersion = 60;/' "$PBXPROJ"
+            echo "After:"; grep objectVersion "$PBXPROJ"
+          fi
+
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild \
+            -project Alhoq.xcodeproj \
+            -scheme Alhoq \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -derivedDataPath build \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            SWIFT_STRICT_CONCURRENCY=minimal \
+            build
+
+      - name: Package .app for Appetize
+        run: |
+          cd build/Build/Products/Debug-iphonesimulator
+          zip -qry "$GITHUB_WORKSPACE/Alhoq-Simulator.zip" Alhoq.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alhoq-Simulator
+          path: Alhoq-Simulator.zip
+          retention-days: 14
