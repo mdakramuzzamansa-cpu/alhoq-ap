@@ -1,111 +1,78 @@
-- name: Patch known SwiftUI toolbar ambiguity issues + bump deploymentTarget
+name: iOS Simulator Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Create project.yml
         run: |
-          python3 - << 'PYEOF'
-          import os, re
-          
-          def find_balanced(content, open_idx):
-              """open_idx points at the '{' character. Returns index just after matching '}'."""
-              depth = 1
-              i = open_idx + 1
-              while depth > 0 and i < len(content):
-                  if content[i] == '{':
-                      depth += 1
-                  elif content[i] == '}':
-                      depth -= 1
-                  i += 1
-              return i  # index just after the matching closing brace
-          
-          def process_file(path):
-              with open(path, encoding="utf-8") as f:
-                  content = f.read()
-          
-              # find all "var body: some View {" anchors (line start index of that line)
-              body_anchors = []
-              for m in re.finditer(
-                  r'^([ \t]*)(?:var body\s*:\s*some View\s*\{|func body\([^)]*\)\s*->\s*some View\s*\{)',
-                  content, re.MULTILINE
-              ):
-                  body_anchors.append((m.start(), m.group(1)))  # (char index of line start, indentation)
-          
-              if not body_anchors:
-                  return False
-          
-              # find all `.toolbar {` occurrences
-              edits = []          # (start, end, replacement) for the toolbar block itself
-              insertions = []     # (position, text) to insert (property declarations)
-              counter = [0]
-          
-              for m in re.finditer(r'\.toolbar\s*\{', content):
-                  open_idx = content.index('{', m.start())
-                  end_idx = find_balanced(content, open_idx)
-                  inner = content[open_idx+1:end_idx-1]
-                  stripped = inner.strip()
-                  if not (stripped.startswith("cancelToolbarItem(")
-                          or stripped.startswith("toolbarItem(")
-                          or stripped.startswith("toolbarItemGroup(")
-                          or re.match(r'^if\s+.+\{\s*(cancelToolbarItem|toolbarItem|toolbarItemGroup)\(', stripped, re.DOTALL)):
-                      continue  # already fine (bare property reference, or literal ToolbarItem some other pattern)
-          
-                  counter[0] += 1
-                  prop_name = f"_toolbarContent{counter[0]}"
-          
-                  # find nearest preceding body anchor
-                  anchor = None
-                  for pos, indent in body_anchors:
-                      if pos < m.start():
-                          anchor = (pos, indent)
-                      else:
-                          break
-                  if anchor is None:
-                      continue
-                  anchor_pos, indent = anchor
-          
-                  prop_decl = (
-                      f"{indent}@ToolbarContentBuilder private var {prop_name}: some ToolbarContent {{\n"
-                      f"{indent}    {stripped}\n"
-                      f"{indent}}}\n\n"
-                  )
-                  insertions.append((anchor_pos, prop_decl))
-                  edits.append((m.start(), end_idx, f".toolbar {{ {prop_name} }}"))
-          
-              if not edits:
-                  return False
-          
-              # apply edits: combine both lists, sort by position descending, apply in that order
-              all_ops = [(s, e, r) for (s, e, r) in edits] + [(p, p, t) for (p, t) in insertions]
-              all_ops.sort(key=lambda x: x[0], reverse=True)
-          
-              new_content = content
-              for start, end, repl in all_ops:
-                  new_content = new_content[:start] + repl + new_content[end:]
-          
-              with open(path, "w", encoding="utf-8") as f:
-                  f.write(new_content)
-              print(f"converted {len(edits)} toolbar closure(s) to properties in {path}")
-              return True
-          
-          
-          # --- walk repo, find swift files ---
-          swift_files = []
-          for dirpath, dirnames, filenames in os.walk("."):
-              dirnames[:] = [d for d in dirnames if d not in (".git", "build", "DerivedData")]
-              for fn in filenames:
-                  if fn.endswith(".swift"):
-                      swift_files.append(os.path.join(dirpath, fn))
-          
-          changed = 0
-          for f in swift_files:
-              if process_file(f):
-                  changed += 1
-          print(f"TOTAL FILES CONVERTED: {changed}")
+          cat << 'EOF' > project.yml
+          name: Alhoq
+          options:
+            bundleIdPrefix: com.alhoq
+            deploymentTarget:
+              iOS: "17.0"
+          targets:
+            Alhoq:
+              type: application
+              platform: iOS
+              deploymentTarget: "17.0"
+              sources:
+                - path: .
+                  excludes:
+                    - ".github"
+                    - "build"
+                    - "project.yml"
+                    - "*.xcodeproj"
+          EOF
 
-          if os.path.isfile("project.yml"):
-              with open("project.yml", encoding="utf-8") as fh:
-                  y = fh.read()
-              y2 = y.replace('iOS: "16.0"', 'iOS: "17.0"').replace('deploymentTarget: "16.0"', 'deploymentTarget: "17.0"')
-              if y2 != y:
-                  with open("project.yml", "w", encoding="utf-8") as fh:
-                      fh.write(y2)
-                  print("bumped project.yml deploymentTarget to 17.0")
+      - name: Generate Xcode project
+        run: xcodegen generate
 
-          PYEOF
+      - name: Patch pbxproj object version for Xcode 15 compatibility
+        run: |
+          PBXPROJ="Alhoq.xcodeproj/project.pbxproj"
+          if [ -f "$PBXPROJ" ]; then
+            echo "Before:"; grep objectVersion "$PBXPROJ"
+            sed -i '' 's/objectVersion = 77;/objectVersion = 60;/' "$PBXPROJ"
+            echo "After:"; grep objectVersion "$PBXPROJ"
+          fi
+
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild \
+            -project Alhoq.xcodeproj \
+            -scheme Alhoq \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -derivedDataPath build \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            SWIFT_STRICT_CONCURRENCY=minimal \
+            build
+
+      - name: Package .app for Appetize
+        run: |
+          cd build/Build/Products/Debug-iphonesimulator
+          zip -qry "$GITHUB_WORKSPACE/Alhoq-Simulator.zip" Alhoq.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alhoq-Simulator
+          path: Alhoq-Simulator.zip
+          retention-days: 14
