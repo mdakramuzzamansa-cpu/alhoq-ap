@@ -16,27 +16,11 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Create project.yml
-        run: |
-          cat << 'EOF' > project.yml
-          name: Alhoq
-          options:
-            bundleIdPrefix: com.alhoq
-            deploymentTarget:
-              iOS: "17.0"
-          targets:
-            Alhoq:
-              type: application
-              platform: iOS
-              deploymentTarget: "17.0"
-              sources:
-                - path: .
-                  excludes:
-                    - ".github"
-                    - "build"
-                    - "project.yml"
-                    - "*.xcodeproj"
-          EOF
+      # project.yml is committed in the repo (with GENERATE_INFOPLIST_FILE,
+      # code-signing settings, permission strings, etc.) — do NOT recreate
+      # it here. A previous version of this workflow overwrote it with a
+      # stripped-down inline copy, which is what caused the Info.plist
+      # build failures.
 
       - name: Generate Xcode project
         run: xcodegen generate
@@ -49,14 +33,10 @@ jobs:
             echo "Fixed ListingDetailView.swift"
           fi
 
-      - name: Patch pbxproj object version for Xcode 15 compatibility
-        run: |
-          PBXPROJ="Alhoq.xcodeproj/project.pbxproj"
-          if [ -f "$PBXPROJ" ]; then
-            echo "Before:"; grep objectVersion "$PBXPROJ"
-            sed -i '' 's/objectVersion = 77;/objectVersion = 60;/' "$PBXPROJ"
-            echo "After:"; grep objectVersion "$PBXPROJ"
-          fi
+      # No objectVersion patch: the runner uses Xcode 16.4, which reads
+      # XcodeGen's format-77 project natively. Downgrading it was only
+      # needed back when the runner picked Xcode 15.4, and doing it now
+      # actively breaks the build (that's what caused the Info.plist error).
 
       - name: Build for iOS Simulator
         run: |
@@ -70,7 +50,6 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            SWIFT_STRICT_CONCURRENCY=minimal \
             build
 
       - name: Package .app for Appetize
