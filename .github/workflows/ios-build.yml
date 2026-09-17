@@ -1,78 +1,86 @@
-name: iOS Simulator Build
-
-on:
-  workflow_dispatch:
-  push:
-    branches: [main]
-
-jobs:
-  build:
-    runs-on: macos-15
-    timeout-minutes: 45
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install XcodeGen
-        run: brew install xcodegen
-
-      - name: Create project.yml
+- name: Patch known SwiftUI toolbar ambiguity issues + bump deploymentTarget
         run: |
-          cat << 'EOF' > project.yml
-          name: Alhoq
-          options:
-            bundleIdPrefix: com.alhoq
-            deploymentTarget:
-              iOS: "16.0"
-          targets:
-            Alhoq:
-              type: application
-              platform: iOS
-              deploymentTarget: "16.0"
-              sources:
-                - path: .
-                  excludes:
-                    - ".github"
-                    - "build"
-                    - "project.yml"
-                    - "*.xcodeproj"
-          EOF
-
-      - name: Generate Xcode project
-        run: xcodegen generate
-
-      - name: Patch pbxproj object version for Xcode 15 compatibility
-        run: |
-          PBXPROJ="Alhoq.xcodeproj/project.pbxproj"
-          if [ -f "$PBXPROJ" ]; then
-            echo "Before:"; grep objectVersion "$PBXPROJ"
-            sed -i '' 's/objectVersion = 77;/objectVersion = 60;/' "$PBXPROJ"
-            echo "After:"; grep objectVersion "$PBXPROJ"
-          fi
-
-      - name: Build for iOS Simulator
-        run: |
-          xcodebuild \
-            -project Alhoq.xcodeproj \
-            -scheme Alhoq \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -derivedDataPath build \
-            ONLY_ACTIVE_ARCH=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            SWIFT_STRICT_CONCURRENCY=minimal \
-            build
-
-      - name: Package .app for Appetize
-        run: |
-          cd build/Build/Products/Debug-iphonesimulator
-          zip -qry "$GITHUB_WORKSPACE/Alhoq-Simulator.zip" Alhoq.app
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Alhoq-Simulator
-          path: Alhoq-Simulator.zip
-          retention-days: 14
+          python3 - << 'PYEOF'
+          import os, re
+          
+          # --- 1) find every .swift file in repo (skip build artifacts) ---
+          swift_files = []
+          for dirpath, dirnames, filenames in os.walk("."):
+              dirnames[:] = [d for d in dirnames if d not in (".git", "build", "DerivedData")]
+              for fn in filenames:
+                  if fn.endswith(".swift"):
+                      swift_files.append(os.path.join(dirpath, fn))
+          
+          # --- 2) ensure the shared helper file exists somewhere; create at ./Extensions/ if missing ---
+          helper_found = any(os.path.basename(f) == "ToolbarHelpers.swift" for f in swift_files)
+          if not helper_found:
+              os.makedirs("Extensions", exist_ok=True)
+              with open("Extensions/ToolbarHelpers.swift", "w", encoding="utf-8") as f:
+                  f.write('''import SwiftUI
+          
+          @ToolbarContentBuilder
+          func cancelToolbarItem(_ title: String, action: @escaping () -> Void) -> some ToolbarContent {
+              ToolbarItem(placement: .cancellationAction) {
+                  Button(title, action: action)
+              }
+          }
+          
+          @ToolbarContentBuilder
+          func toolbarItem<Content: View>(
+              placement: ToolbarItemPlacement,
+              @ViewBuilder content: @escaping () -> Content
+          ) -> some ToolbarContent {
+              ToolbarItem(placement: placement, content: content)
+          }
+          
+          @ToolbarContentBuilder
+          func toolbarItemGroup<Content: View>(
+              placement: ToolbarItemPlacement,
+              @ViewBuilder content: @escaping () -> Content
+          ) -> some ToolbarContent {
+              ToolbarItemGroup(placement: placement, content: content)
+          }
+          ''')
+              print("created Extensions/ToolbarHelpers.swift")
+              swift_files.append("Extensions/ToolbarHelpers.swift")
+          else:
+              print("ToolbarHelpers.swift already present, leaving as-is")
+          
+          # --- 3) fix the real bug: a FUNCTION CALL as the sole content of `.toolbar { }`
+          #     is still ambiguous in this Xcode/SDK combo even when the function's
+          #     return type is `some ToolbarContent`. Giving the closure an EXPLICIT
+          #     return type annotation removes the ambiguity for good (this is the same
+          #     technique that already fixed AiAssistantView's named-property toolbar).
+          pattern = re.compile(
+              r'(\.toolbar\s*\{)(\s*(?:if\s+[^\n{]+\{\s*)?)((?:cancelToolbarItem|toolbarItem|toolbarItemGroup)\()'
+          )
+          
+          changed_files = 0
+          for f in swift_files:
+              with open(f, encoding="utf-8") as fh:
+                  content = fh.read()
+              def repl(m):
+                  return f'{m.group(1)} () -> some ToolbarContent in{m.group(2)}{m.group(3)}'
+              new_content, n = pattern.subn(repl, content)
+              if n:
+                  with open(f, "w", encoding="utf-8") as fh:
+                      fh.write(new_content)
+                  print(f"annotated {n} toolbar closure(s) in {f}")
+                  changed_files += 1
+          
+          print(f"TOTAL FILES ANNOTATED: {changed_files}")
+          
+          # --- 4) bump deploymentTarget to 17.0 in project.yml (fixes onChange/navigationDestination(item:) errors) ---
+          if os.path.isfile("project.yml"):
+              with open("project.yml", encoding="utf-8") as fh:
+                  y = fh.read()
+              y2 = y.replace('iOS: "16.0"', 'iOS: "17.0"').replace('deploymentTarget: "16.0"', 'deploymentTarget: "17.0"')
+              if y2 != y:
+                  with open("project.yml", "w", encoding="utf-8") as fh:
+                      fh.write(y2)
+                  print("bumped project.yml deploymentTarget to 17.0")
+              else:
+                  print("project.yml: no 16.0 deploymentTarget string found (check manually)")
+          else:
+              print("project.yml not found at repo root (this step runs after 'Create project.yml', so check step order)")
+          PYEOF
