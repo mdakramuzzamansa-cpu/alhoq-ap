@@ -130,8 +130,7 @@ struct ListingDetailView: View {
                     NavigationLink {
                         SellerProfileView(userId: user.id)
                     } label: {
-                        Text("প্রোফাইল দেখুন").font(.caption).foregroundStyle(.accentColor)
-                    }
+Text("প্রোফাইল দেখুন").font(.caption).foregroundStyle(Color.accentColor)                    }
                 }
             }
             Spacer()
