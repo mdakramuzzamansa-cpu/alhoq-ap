@@ -41,6 +41,14 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Fix accentColor foregroundStyle error
+        run: |
+          FILE="Views/Listings/ListingDetailView.swift"
+          if [ -f "$FILE" ]; then
+            sed -i '' 's/\.foregroundStyle(\.accentColor)/\.foregroundStyle(\.accent)/g' "$FILE"
+            echo "Fixed ListingDetailView.swift"
+          fi
+
       - name: Patch pbxproj object version for Xcode 15 compatibility
         run: |
           PBXPROJ="Alhoq.xcodeproj/project.pbxproj"
