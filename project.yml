@@ -3,7 +3,7 @@ name: Alhoq
 options:
   bundleIdPrefix: com.alhoq
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "17.0"
   createIntermediateGroups: true
   generateEmptyDirectories: false
 
@@ -11,36 +11,18 @@ targets:
   Alhoq:
     type: application
     platform: iOS
+    deploymentTarget: "17.0"
     sources:
-      - path: Alhoq
+      - path: .
         excludes:
+          - ".github"
+          - "build"
+          - "project.yml"
+          - "*.xcodeproj"
           - "**/*.md"
-    info:
-      path: Generated/Info.plist
-      properties:
-        CFBundleDisplayName: Alhoq
-        CFBundleShortVersionString: "1.0"
-        CFBundleVersion: "1"
-        UILaunchScreen: {}
-        UISupportedInterfaceOrientations:
-          - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
-        UIApplicationSceneManifest:
-          UIApplicationSupportsMultipleScenes: true
-        # Permission strings — from Alhoq/PERMISSIONS_README.md
-        NSCameraUsageDescription: "ভিডিও কল/লাইভ স্ট্রিমের জন্য ক্যামেরা দরকার।"
-        NSMicrophoneUsageDescription: "কল/লাইভ/ভয়েস মেসেজের জন্য মাইক্রোফোন দরকার।"
-        NSSpeechRecognitionUsageDescription: "আপনার ভয়েস মেসেজ টেক্সটে রূপান্তর করতে এটা লাগে।"
-        NSPhotoLibraryUsageDescription: "ছবি/ভিডিও বেছে নেওয়ার জন্য গ্যালারি অ্যাক্সেস দরকার।"
-        NSLocationWhenInUseUsageDescription: "আপনার এলাকা অনুযায়ী সঠিক ফলাফল দেখাতে লোকেশন দরকার।"
-        # Simulator/Appetize convenience: allow plain-HTTP dev API hosts.
-        # Remove this block before any App Store submission.
-        NSAppTransportSecurity:
-          NSAllowsArbitraryLoads: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.alhoq.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.alhoq.Alhoq
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
@@ -49,15 +31,20 @@ targets:
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGNING_ALLOWED: "NO"
         ENABLE_USER_SCRIPT_SANDBOXING: "NO"
-        # Universal simulator slices (arm64 + x86_64) so the build runs on
-        # whatever host Appetize schedules it on.
         ONLY_ACTIVE_ARCH: "NO"
-
-# AgoraRtcKit is optional — every call site is wrapped in #if canImport(AgoraRtcKit),
-# so the project compiles without it and the call/live screens fall back to stubs.
-# To enable real A/V later, uncomment below and add `dependencies` to the target.
-#
-# packages:
-#   AgoraRtcKit:
-#     url: https://github.com/AgoraIO/AgoraRtcEngine_iOS
-#     from: "4.3.0"
+        
+        # Modern auto-generated Info.plist settings (No physical Info.plist required)
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Alhoq
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait,UIInterfaceOrientationLandscapeLeft,UIInterfaceOrientationLandscapeRight"
+        
+        # Permission strings
+        INFOPLIST_KEY_NSCameraUsageDescription: "ভিডিও কল/লাইভ স্ট্রিমের জন্য ক্যামেরা দরকার।"
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "কল/লাইভ/ভয়েস মেসেজের জন্য মাইক্রোফোন দরকার।"
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "আপনার ভয়েস মেসেজ টেক্সটে রূপান্তর করতে এটা লাগে।"
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "ছবি/ভিডিও বেছে নেওয়ার জন্য গ্যালারি অ্যাক্সেস দরকার।"
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "আপনার এলাকা অনুযায়ী সঠিক ফলাফল দেখাতে লোকেশন দরকার।"
+        
+        # Allow HTTP dev connections if needed
+        INFOPLIST_KEY_NSAppTransportSecurity: "NSAllowsArbitraryLoads"
